@@ -1,13 +1,6 @@
 
-# GTFO
+# NLFW
 
-This is an app designed to unsubscribe you from all possible sites that have your data.
+This app reads your emails, identifies recruiting emails, then drafts nice responses that politely tell them to fuck off. My unending attempts to remove my information from data-sellers have failed, at least I can automate my responses.
 
-
-### TODO
-
-1. scrape this list and convert into a csv https://inteltechniques.com/workbook.html
-2. write a simple tool that can interact with the websites, filling in forms and navigating pages to unsubscribe from data
-3. design an agent (with prompts) to use this tool and crush the list
-4. add another tool that can search for other sites that might be storing my data 
-
+Ideally this would also go online and unsubscribe you from recruiting sites by making "do not sell my data" requests, but they now all have captcha and cloudflare bot detection...

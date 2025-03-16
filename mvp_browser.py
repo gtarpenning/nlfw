@@ -1,4 +1,3 @@
-
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
 import asyncio
@@ -24,11 +23,13 @@ INSTRUCTIONS:
 - Fill in the form with the data provided
 """
 
+
 async def main():
     agent = Agent(
         task=task,
         llm=ChatOpenAI(model="gpt-4o"),
     )
     await agent.run()
+
 
 asyncio.run(main())
