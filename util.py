@@ -3,7 +3,7 @@ from email.utils import parsedate_to_datetime
 from email.message import Message
 from datetime import datetime
 
-from mail import EmailMessage
+from interface import EmailMessage
 
 
 def parse_email_message(msg: Message) -> EmailMessage:

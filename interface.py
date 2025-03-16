@@ -3,6 +3,7 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 from typing import List
 from pydantic import BaseModel
+from email.message import Message
 
 
 @dataclass
@@ -45,7 +46,7 @@ class MailHandler(ABC):
         pass
 
     @abstractmethod
-    def fetch_message(self, msg_id: str) -> email.message.Message:
+    def fetch_message(self, msg_id: str) -> Message:
         """Fetch a specific message by ID."""
         pass
 
