@@ -4,11 +4,13 @@ import email
 from typing import List
 import openai
 import re
+from datetime import datetime
 
 import weave
 from config import InterestConfig, DEFAULT_CONFIG
 from interface import EmailMessage, EmailAnalysis, MailHandler
 from util import parse_email_message
+from database import DatabaseManager, JobEmailData
 
 # weave.init("recruiter-email-bot")
 
@@ -141,6 +143,7 @@ class MailClient:
         self.mail_handler = mail_handler
         self.openai_client = openai.OpenAI()
         self.config: InterestConfig = config
+        self.db_manager = DatabaseManager()
 
     def connect(self) -> None:
         """Connect to the mail server."""
@@ -267,7 +270,29 @@ class MailClient:
             response_format=EmailAnalysis,
         )
 
-        return response.choices[0].message.parsed
+        analysis = response.choices[0].message.parsed
+
+        # Extract detailed job information and store in database if it's a recruiter email
+        if analysis.is_recruiter:
+            analyzed_data = self.db_manager.extract_job_details(
+                clean_body, clean_subject
+            )
+
+            # Store the email data in the database
+            email_data = JobEmailData(
+                message_id=email_msg.message_id,
+                sender=email_msg.sender,
+                subject=email_msg.subject,
+                body=email_msg.body,
+                received_date=email_msg.date,
+                analyzed_data=analyzed_data,
+                is_recruiter=analysis.is_recruiter,
+                is_followup=analysis.is_followup,
+                mentions_topics=analysis.mentions_topics,
+            )
+            self.db_manager.store_email(email_data)
+
+        return analysis
 
     @weave.op
     def generate_response(self, email_msg: EmailMessage) -> str:
@@ -299,7 +324,7 @@ class MailClient:
 
         response = self.openai_client.chat.completions.create(
             model="gpt-4o",
-            temperature=1.2,  # bit more creative
+            temperature=1,  # bit more creative
             messages=[
                 {
                     "role": "system",
@@ -349,7 +374,7 @@ class MailClient:
         html_response += """
         <br><br>
         <div style='font-style: italic; color: #666; font-size: 0.9em;'>
-            (composed by Griffin's automated <a href="https://github.com/gtarpenning/nlfw" style="color: #666; text-decoration: underline;">nlfw</a> assistant)
+            (request logged and saved, response composed by Griffin's <a href="https://github.com/gtarpenning/nlfw" style="color: #666; text-decoration: underline;">nlfw</a> assistant)
         </div>
         """
 
@@ -404,6 +429,14 @@ class MailClient:
         # Reselect inbox
         self.mail_handler.get_inbox()
 
+    def get_stored_recruiter_emails(self) -> List[JobEmailData]:
+        """Retrieve all stored recruiter emails from the database."""
+        return self.db_manager.get_all_recruiter_emails()
+
+    def get_stored_email(self, message_id: str) -> JobEmailData:
+        """Retrieve a specific email from the database."""
+        return self.db_manager.get_email(message_id)
+
 
 def main_test():
     password = os.getenv("GMAIL_PASSWORD")
@@ -417,10 +450,14 @@ def main_test():
     mail_handler.connect()
     mail_client = MailClient(mail_handler=mail_handler)
     unread_messages = mail_client.get_unread_messages()
-    analysis = mail_client.analyze_email(unread_messages[0])
-    print(analysis)
-    response = mail_client.generate_response(unread_messages[0])
-    mail_client.create_response_draft(unread_messages[0], response)
+    if len(unread_messages) > 0:
+        analysis = mail_client.analyze_email(unread_messages[0])
+        print(analysis)
+        response = mail_client.generate_response(unread_messages[0])
+        mail_client.create_response_draft(unread_messages[0], response)
+
+    stored_emails = mail_client.get_stored_recruiter_emails()
+    print(stored_emails)
 
 
 if __name__ == "__main__":
