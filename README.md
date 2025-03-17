@@ -1,5 +1,5 @@
 
-# NLFW
+# NLFW (Not looking for work)
 
 This app reads your emails, identifies recruiting emails, then drafts nice responses that tell them to stop. My unending attempts to remove my information from data-sellers have failed, at least I can automate my responses.
 
