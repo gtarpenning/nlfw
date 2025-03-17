@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import List
 from mail import MailHandler, MailClient, EmailMessage, EmailAnalysis
 from pydantic import BaseModel
+import os
+from test_database import test_db
 
 
 class MockMailHandler(MailHandler):
@@ -439,3 +441,34 @@ def test_create_response_draft(mail_client):
     assert messages[0].message_id in draft["in_reply_to"]
     assert messages[0].message_id in draft["references"]
     assert "wrote:" in draft["body"]  # Check that original message is quoted
+
+
+def test_database_integration(mail_client, test_emails, test_db):
+    """Test that recruiter emails are properly stored in the database."""
+
+    mail_client.connect()
+    messages = mail_client.get_unread_messages()
+
+    # Process first email (regular recruiter email)
+    analysis = mail_client.analyze_email(messages[0])
+    assert analysis.is_recruiter is True
+
+    # Verify email was stored in database
+    stored_email = mail_client.get_stored_email(messages[0].message_id)
+    assert stored_email is not None
+    assert stored_email.subject == messages[0].subject
+    assert stored_email.is_recruiter is True
+    assert isinstance(stored_email.analyzed_data, dict)
+    assert "company_name" in stored_email.analyzed_data
+    assert "role_title" in stored_email.analyzed_data
+
+    # Process second email (climate tech recruiter)
+    analysis = mail_client.analyze_email(messages[1])
+    assert analysis.is_recruiter is True
+    assert analysis.mentions_topics is True
+
+    # Get all recruiter emails from database
+    stored_emails = mail_client.get_stored_recruiter_emails()
+    assert len(stored_emails) == 2
+    assert any("Climate Tech" in email.subject for email in stored_emails)
+    assert all(email.is_recruiter for email in stored_emails)
