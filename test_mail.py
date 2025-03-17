@@ -63,17 +63,25 @@ class MockMailHandler(MailHandler):
         if msg_id in self.read_messages:
             self.read_messages.remove(msg_id)
 
-    def create_draft(self, to: str, subject: str, body: str, *, in_reply_to: str = None, references: str = None) -> None:
+    def create_draft(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        *,
+        in_reply_to: str = None,
+        references: str = None,
+    ) -> None:
         """Mock implementation of draft creation that stores drafts in memory."""
         if not self.is_connected:
             raise ConnectionError("Not connected")
-            
+
         draft = {
-            'to': to,
-            'subject': subject,
-            'body': body,
-            'in_reply_to': in_reply_to,
-            'references': references
+            "to": to,
+            "subject": subject,
+            "body": body,
+            "in_reply_to": in_reply_to,
+            "references": references,
         }
         self.drafts.append(draft)
 
@@ -219,7 +227,7 @@ def test_mark_as_read_requires_connection(mail_client):
     mail_client.disconnect()
     with pytest.raises(ConnectionError):
         mail_client.mail_handler.mark_as_read("1")
-    
+
     mail_client.connect()
     mail_client.mail_handler.get_inbox()
     mail_client.mail_handler.mark_as_read("0")
@@ -392,11 +400,9 @@ def test_create_draft(mail_client):
     # Should fail when not connected
     with pytest.raises(ConnectionError):
         mail_client.mail_handler.create_draft(
-            to="test@example.com",
-            subject="Test Subject",
-            body="Test Body"
+            to="test@example.com", subject="Test Subject", body="Test Body"
         )
-    
+
     # Connect and create a draft
     mail_client.connect()
     mail_client.mail_handler.create_draft(
@@ -404,17 +410,17 @@ def test_create_draft(mail_client):
         subject="Test Subject",
         body="Test Body",
         in_reply_to="<test_id@example.com>",
-        references="<test_id@example.com>"
+        references="<test_id@example.com>",
     )
-    
+
     # Verify draft was created
     assert len(mail_client.mail_handler.drafts) == 1
     draft = mail_client.mail_handler.drafts[0]
-    assert draft['to'] == "test@example.com"
-    assert draft['subject'] == "Test Subject"
-    assert draft['body'] == "Test Body"
-    assert draft['in_reply_to'] == "<test_id@example.com>"
-    assert draft['references'] == "<test_id@example.com>"
+    assert draft["to"] == "test@example.com"
+    assert draft["subject"] == "Test Subject"
+    assert draft["body"] == "Test Body"
+    assert draft["in_reply_to"] == "<test_id@example.com>"
+    assert draft["references"] == "<test_id@example.com>"
 
 
 def test_create_response_draft(mail_client):
@@ -423,13 +429,13 @@ def test_create_response_draft(mail_client):
     messages = mail_client.get_unread_messages()
     response = mail_client.generate_response(messages[0])
     mail_client.create_response_draft(messages[0], response)
-    
+
     # Verify draft was created
     assert len(mail_client.mail_handler.drafts) == 1
     draft = mail_client.mail_handler.drafts[0]
-    
+
     # Verify it's a reply to the original message
-    assert draft['subject'].startswith("Re:")
-    assert messages[0].message_id in draft['in_reply_to']
-    assert messages[0].message_id in draft['references']
-    assert "wrote:" in draft['body']  # Check that original message is quoted
+    assert draft["subject"].startswith("Re:")
+    assert messages[0].message_id in draft["in_reply_to"]
+    assert messages[0].message_id in draft["references"]
+    assert "wrote:" in draft["body"]  # Check that original message is quoted

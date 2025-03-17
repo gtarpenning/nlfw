@@ -337,24 +337,72 @@ class MailClient:
 
         # Format the response with the original message quoted
         formatted_date = email_msg.date.strftime("%a, %b %d, %Y at %I:%M %p")
-        full_response = (
-            f"{response_body}\n\nOn {formatted_date}, {email_msg.sender} wrote:\n\n"
-        )
 
-        # Quote the original message by adding '>' prefix to each line
+        response_body = response_body.replace("\n", "<br>")
+
+        # Create both HTML and plain text versions
+        html_response = f"""
+        <div>{response_body}</div>
+        """
+
+        # Add byline with proper HTML formatting
+        html_response += """
+        <br><br>
+        <div style='font-style: italic; color: #666; font-size: 0.9em;'>
+            (composed by Griffin's automated <a href="https://github.com/gtarpenning/nlfw" style="color: #666; text-decoration: underline;">nlfw</a> assistant)
+        </div>
+        """
+
+        # Quote the original message
+        html_response += f"""
+        <br><br>
+        On {formatted_date}, {email_msg.sender} wrote:<br><br>
+        """
         quoted_body = "\n".join(
             f"> {line}" for line in email_msg.body.strip().split("\n")
         )
-        full_response += quoted_body
+        quoted_body_html = quoted_body.replace("\n", "<br>")
+        html_response += f'<div style="margin-left: 10px; padding-left: 10px; border-left: 1px solid #ccc;">{quoted_body_html}</div>'
 
-        # Create the draft with threading information
-        self.mail_handler.create_draft(
-            to=to_address,
-            subject=subject,
-            body=full_response,
-            in_reply_to=email_msg.message_id,
-            references=email_msg.message_id,
-        )
+        # Create the email message with HTML content
+        msg = email.message.EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self.mail_handler.email_address
+        msg["To"] = to_address
+        msg["Date"] = email.utils.formatdate(localtime=True)
+        msg["In-Reply-To"] = email_msg.message_id
+        msg["References"] = email_msg.message_id
+
+        # Set the HTML content
+        msg.add_alternative(html_response, subtype="html")
+
+        # Convert the message to bytes and create the draft
+        email_bytes = msg.as_bytes()
+
+        try:
+            # Select the Gmail Drafts folder
+            status, _ = self.mail_handler.mail.select('"[Gmail]/Drafts"')
+            if status != "OK":
+                # Try alternative folder name
+                status, _ = self.mail_handler.mail.select('"[Google Mail]/Drafts"')
+                if status != "OK":
+                    raise Exception("Failed to select Drafts folder")
+
+            # Append the message to the Drafts folder
+            status, _ = self.mail_handler.mail.append(
+                '"[Gmail]/Drafts"' if status == "OK" else '"[Google Mail]/Drafts"',
+                "(\Draft)",
+                None,
+                email_bytes,
+            )
+            if status != "OK":
+                raise Exception("Failed to create draft message")
+
+        except Exception as e:
+            raise Exception(f"Failed to create draft: {str(e)}")
+
+        # Reselect inbox
+        self.mail_handler.get_inbox()
 
 
 def main_test():
