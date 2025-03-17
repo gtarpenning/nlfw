@@ -6,7 +6,7 @@ This app reads your emails, identifies recruiting emails, then drafts nice respo
 Ideally this would also go online and unsubscribe you from recruiting sites by making "do not sell my data" requests, but they now all have captcha and cloudflare bot detection...
 
 Example output for a config with an interest in climate change:
-<img width="1144" alt="demo" src="https://github.com/user-attachments/assets/8ddd9891-ad23-4c27-a156-ebdd0252af4a" />
+<img width="1139" alt="demo1" src="https://github.com/user-attachments/assets/3a2ce54a-7161-47e1-be2e-ad843656c25b" />
 
 ### Usage 
 
