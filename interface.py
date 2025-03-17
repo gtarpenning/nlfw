@@ -20,6 +20,8 @@ class EmailAnalysis(BaseModel):
     mentions_topics: bool
     recruiter_explanation: str
     topic_explanation: str
+    is_followup: bool
+    followup_explanation: str
 
 
 class MailHandler(ABC):

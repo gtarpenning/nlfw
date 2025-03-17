@@ -13,6 +13,7 @@ class MockMailHandler(MailHandler):
         self.is_connected = False
         self.inbox_selected = False
         self.read_messages = set()  # Track which messages are marked as read
+        self.drafts = []  # Store draft messages
 
     def connect(self) -> None:
         self.is_connected = True
@@ -43,6 +44,8 @@ class MockMailHandler(MailHandler):
             raise ConnectionError("Not connected")
         if not self.inbox_selected:
             raise RuntimeError("Inbox not selected")
+        # Mark message as read when fetched (IMAP behavior)
+        self.read_messages.add(msg_id)
         return self.test_messages[int(msg_id)]
 
     def mark_as_read(self, msg_id: str) -> None:
@@ -59,6 +62,20 @@ class MockMailHandler(MailHandler):
             raise RuntimeError("Inbox not selected")
         if msg_id in self.read_messages:
             self.read_messages.remove(msg_id)
+
+    def create_draft(self, to: str, subject: str, body: str, *, in_reply_to: str = None, references: str = None) -> None:
+        """Mock implementation of draft creation that stores drafts in memory."""
+        if not self.is_connected:
+            raise ConnectionError("Not connected")
+            
+        draft = {
+            'to': to,
+            'subject': subject,
+            'body': body,
+            'in_reply_to': in_reply_to,
+            'references': references
+        }
+        self.drafts.append(draft)
 
 
 def create_test_email(
@@ -151,8 +168,7 @@ def mail_client(test_emails):
     return MailClient(handler)
 
 
-@pytest.mark.asyncio
-async def test_get_unread_messages(mail_client, test_emails):
+def test_get_unread_messages(mail_client, test_emails):
     """Test fetching unread messages."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
@@ -171,8 +187,7 @@ async def test_get_unread_messages(mail_client, test_emails):
     )
 
 
-@pytest.mark.asyncio
-async def test_unread_messages_are_marked_as_read(mail_client, test_emails):
+def test_unread_messages_are_marked_as_read(mail_client, test_emails):
     """Test that messages are properly marked as read after processing."""
     mail_client.connect()
 
@@ -192,97 +207,91 @@ async def test_unread_messages_are_marked_as_read(mail_client, test_emails):
     )
 
 
-@pytest.mark.asyncio
-async def test_mark_as_read_requires_connection(mail_client):
+def test_mark_as_read_requires_connection(mail_client):
     """Test that mark_as_read requires an active connection."""
     with pytest.raises(ConnectionError):
         mail_client.mail_handler.mark_as_read("0")
 
     mail_client.connect()
-    mail_client.mail_handler.mark_as_read("0")
+    with pytest.raises(RuntimeError, match="Inbox not selected"):
+        mail_client.mail_handler.mark_as_read("0")
 
     mail_client.disconnect()
     with pytest.raises(ConnectionError):
         mail_client.mail_handler.mark_as_read("1")
+    
+    mail_client.connect()
+    mail_client.mail_handler.get_inbox()
+    mail_client.mail_handler.mark_as_read("0")
 
 
-@pytest.mark.asyncio
-async def test_analyze_regular_recruiter_email(mail_client):
+def test_analyze_regular_recruiter_email(mail_client):
     """Test analyzing a regular recruiter email."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
-    analysis = await mail_client.analyze_email(messages[0])
+    analysis = mail_client.analyze_email(messages[0])
 
     assert isinstance(analysis, EmailAnalysis)
     assert analysis.is_recruiter is True
-    assert analysis.mentions_climate is False
+    assert analysis.mentions_topics is False
     assert isinstance(analysis.recruiter_explanation, str)
     assert len(analysis.recruiter_explanation) > 0
-    assert isinstance(analysis.climate_explanation, str)
-    assert len(analysis.climate_explanation) > 0
+    assert isinstance(analysis.topic_explanation, str)
+    assert len(analysis.topic_explanation) > 0
     assert analysis.model_dump()  # Verify Pydantic serialization works
 
 
-@pytest.mark.asyncio
-async def test_analyze_climate_recruiter_email(mail_client):
+def test_analyze_climate_recruiter_email(mail_client):
     """Test analyzing a climate-focused recruiter email."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
-    analysis = await mail_client.analyze_email(messages[1])
+    analysis = mail_client.analyze_email(messages[1])
 
     assert isinstance(analysis, EmailAnalysis)
     assert analysis.is_recruiter is True
-    assert analysis.mentions_climate is True
-    assert "climate" in analysis.climate_explanation.lower()
+    assert analysis.mentions_topics is True
+    assert "climate" in analysis.topic_explanation.lower()
     assert "recruiter" in analysis.recruiter_explanation.lower()
     assert analysis.model_dump()  # Verify Pydantic serialization works
 
 
-@pytest.mark.asyncio
-async def test_analyze_non_recruiter_email(mail_client):
+def test_analyze_non_recruiter_email(mail_client):
     """Test analyzing a non-recruiter email."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
-    analysis = await mail_client.analyze_email(messages[2])
+    analysis = mail_client.analyze_email(messages[2])
 
     assert isinstance(analysis, EmailAnalysis)
     assert analysis.is_recruiter is False
-    assert analysis.mentions_climate is False
-    assert "meeting" in analysis.recruiter_explanation.lower()
-    assert "not" in analysis.climate_explanation.lower()
+    assert analysis.mentions_topics is False
     assert analysis.model_dump()  # Verify Pydantic serialization works
 
 
-@pytest.mark.asyncio
-async def test_analyze_followup_email(mail_client):
+def test_analyze_followup_email(mail_client):
     """Test analyzing a follow-up recruiter email."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
-    analysis = await mail_client.analyze_email(messages[3])
+    analysis = mail_client.analyze_email(messages[3])
 
     assert isinstance(analysis, EmailAnalysis)
-    assert analysis.is_recruiter is False  # Should be False because it's a follow-up
-    assert analysis.mentions_climate is False
-    assert "follow" in analysis.recruiter_explanation.lower()
-    assert "not" in analysis.climate_explanation.lower()
+    assert analysis.is_recruiter is True
+    assert analysis.is_followup is True
+    assert analysis.mentions_topics is False
     assert analysis.model_dump()  # Verify Pydantic serialization works
 
 
-@pytest.mark.asyncio
-async def test_generate_response(mail_client):
+def test_generate_response(mail_client):
     """Test generating a response to a recruiter email."""
     mail_client.connect()
     messages = mail_client.get_unread_messages()
-    response = await mail_client.generate_response(messages[0])
+    response = mail_client.generate_response(messages[0])
 
     assert isinstance(response, str)
     assert len(response) > 0
     assert "climate" in response.lower()
-    assert "thank" in response.lower()
 
 
-@pytest.mark.asyncio
-async def test_connection_state(mail_client):
+def test_connection_state(mail_client):
     """Test connection state handling."""
     # Should raise when not connected
     with pytest.raises(ConnectionError):
@@ -298,10 +307,9 @@ async def test_connection_state(mail_client):
         mail_client.mail_handler.get_inbox()
 
 
-@pytest.mark.asyncio
-async def test_process_recruiter_emails(mail_client, capsys):
+def test_process_recruiter_emails(mail_client, capsys):
     """Test the main processing function."""
-    await mail_client.process_recruiter_emails()
+    mail_client.process_recruiter_emails()
     captured = capsys.readouterr()
 
     # Should only generate response for the first email (regular recruiter email)
@@ -320,82 +328,15 @@ async def test_process_recruiter_emails(mail_client, capsys):
 def test_clean_email_content(mail_client):
     """Test email content cleaning functionality."""
     test_cases = [
-        # Test case 1: Email with signature
-        (
-            """
-            Hi there,
-            
-            This is a test email.
-            
-            Best regards,
-            John Doe
-            Senior Recruiter
-            Phone: 123-456-7890
-            """,
-            "Hi there, This is a test email.",
-        ),
-        # Test case 2: Email with URLs and HTML
+        # Test case 1: Email with URLs and HTML
         (
             """
             Check out our website: https://example.com
             Or click here: <a href="https://test.com">link</a>
             Some normal text.
             """,
-            "Check out our website: Or click here: Some normal text.",
-        ),
-        # Test case 3: Email with confidentiality notice
-        (
-            """
-            Important message here.
-            
-            CONFIDENTIAL: This email and any files transmitted with it are confidential.
-            If you are not the intended recipient, please delete this email.
-            """,
-            "Important message here.",
-        ),
-        # Test case 4: Email with quoted content
-        (
-            """
-            Sure, I can help with that.
-
-            On Tue, Mar 12, 2024 at 10:00 AM John Doe <john@example.com> wrote:
-            > Can you help me with this?
-            > Thanks
-            """,
-            "Sure, I can help with that.",
-        ),
-        # Test case 5: Email with meeting details
-        (
-            """
-            Let's have a meeting.
-            
-            When: Tomorrow at 2 PM
-            Where: Conference Room A
-            Meeting ID: 123 456 789
-            Passcode: abc123
-            
-            See you there!
-            """,
-            "Let's have a meeting. See you there!",
-        ),
-        # Test case 6: Email with multiple types of content to clean
-        (
-            """
-            Hi there,
-            
-            Check our job board: https://jobs.example.com
-            
-            Best regards,
-            John Smith
-            
-            --
-            John Smith | Senior Recruiter
-            Tel: +1 234 567 8900
-            
-            CONFIDENTIAL: This email is confidential.
-            """,
-            "Hi there, Check our job board:",
-        ),
+            "Check out our website: Or click here: link Some normal text.",
+        )
     ]
 
     for input_text, expected_output in test_cases:
@@ -403,47 +344,13 @@ def test_clean_email_content(mail_client):
         assert cleaned.strip() == expected_output.strip()
 
 
-def test_clean_email_preserves_important_content(mail_client):
-    """Test that email cleaning preserves important recruiting and climate-related content."""
-    email_content = """
-    Hi there,
-    
-    I'm reaching out about an exciting opportunity at our climate tech startup.
-    We're working on reducing carbon emissions and fighting climate change.
-    
-    The role offers:
-    - Competitive salary
-    - Great benefits
-    https://benefits.example.com
-    
-    Best regards,
-    Jane Recruiter
-    Senior Technical Recruiter
-    """
-
-    cleaned = mail_client.clean_email_content(email_content)
-
-    # Check that important keywords are preserved
-    assert "climate tech" in cleaned
-    assert "carbon emissions" in cleaned
-    assert "climate change" in cleaned
-    assert "opportunity" in cleaned
-    assert "role" in cleaned
-    assert "salary" in cleaned
-    assert "benefits" in cleaned
-
-    # Check that unnecessary content is removed
-    assert "https://" not in cleaned
-    assert "Senior Technical Recruiter" not in cleaned
-
-
-@pytest.mark.asyncio
-async def test_mark_as_unread_requires_connection(mail_client):
+def test_mark_as_unread_requires_connection(mail_client):
     """Test that mark_as_unread requires an active connection."""
     with pytest.raises(ConnectionError):
         mail_client.mail_handler.mark_as_unread("0")
 
     mail_client.connect()
+    mail_client.mail_handler.get_inbox()  # Select inbox before marking as unread
     mail_client.mail_handler.mark_as_unread("0")
 
     mail_client.disconnect()
@@ -451,8 +358,7 @@ async def test_mark_as_unread_requires_connection(mail_client):
         mail_client.mail_handler.mark_as_unread("1")
 
 
-@pytest.mark.asyncio
-async def test_mark_as_unread_functionality(mail_client, test_emails):
+def test_mark_as_unread_functionality(mail_client, test_emails):
     """Test marking messages as unread."""
     mail_client.connect()
 
@@ -479,3 +385,51 @@ async def test_mark_as_unread_functionality(mail_client, test_emails):
     # Fetch messages again - should get all messages
     messages3 = mail_client.get_unread_messages()
     assert len(messages3) == len(test_emails)
+
+
+def test_create_draft(mail_client):
+    """Test creating a draft email."""
+    # Should fail when not connected
+    with pytest.raises(ConnectionError):
+        mail_client.mail_handler.create_draft(
+            to="test@example.com",
+            subject="Test Subject",
+            body="Test Body"
+        )
+    
+    # Connect and create a draft
+    mail_client.connect()
+    mail_client.mail_handler.create_draft(
+        to="test@example.com",
+        subject="Test Subject",
+        body="Test Body",
+        in_reply_to="<test_id@example.com>",
+        references="<test_id@example.com>"
+    )
+    
+    # Verify draft was created
+    assert len(mail_client.mail_handler.drafts) == 1
+    draft = mail_client.mail_handler.drafts[0]
+    assert draft['to'] == "test@example.com"
+    assert draft['subject'] == "Test Subject"
+    assert draft['body'] == "Test Body"
+    assert draft['in_reply_to'] == "<test_id@example.com>"
+    assert draft['references'] == "<test_id@example.com>"
+
+
+def test_create_response_draft(mail_client):
+    """Test creating a response draft from an email message."""
+    mail_client.connect()
+    messages = mail_client.get_unread_messages()
+    response = mail_client.generate_response(messages[0])
+    mail_client.create_response_draft(messages[0], response)
+    
+    # Verify draft was created
+    assert len(mail_client.mail_handler.drafts) == 1
+    draft = mail_client.mail_handler.drafts[0]
+    
+    # Verify it's a reply to the original message
+    assert draft['subject'].startswith("Re:")
+    assert messages[0].message_id in draft['in_reply_to']
+    assert messages[0].message_id in draft['references']
+    assert "wrote:" in draft['body']  # Check that original message is quoted

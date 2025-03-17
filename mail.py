@@ -151,14 +151,29 @@ class MailClient:
         self.mail_handler.disconnect()
 
     @weave.op
-    def read_unreads_and_draft_responses(self) -> None:
-        """Read unread messages and draft responses if any are recruiter emails."""
-        unread_messages = self.get_unread_messages()
-        for msg in unread_messages:
-            analysis = self.analyze_email(msg)
-            if analysis.is_recruiter and not analysis.mentions_topics:
-                response = self.generate_response(msg)
-                self.create_response_draft(msg, response)
+    def process_recruiter_emails(self) -> None:
+        """
+        Main method to process recruiter emails:
+        1. Get unread messages
+        2. Analyze emails for recruiter content and configured topics
+        3. Generate and save response drafts for review
+        """
+        try:
+            self.connect()
+            unread_messages = self.get_unread_messages()
+
+            for msg in unread_messages:
+                analysis = self.analyze_email(msg)
+                if analysis.is_followup:
+                    # never respond to follow up emails
+                    continue
+                if analysis.is_recruiter and not analysis.mentions_topics:
+                    response = self.generate_response(msg)
+                    self.create_response_draft(msg, response)
+                    print(f"Created draft response for: {msg.subject}")
+
+        finally:
+            self.disconnect()
 
     @weave.op
     def get_unread_messages(self, limit: int = 10) -> List[EmailMessage]:
@@ -170,9 +185,6 @@ class MailClient:
         for msg_id in message_ids[:limit]:
             msg = self.mail_handler.fetch_message(msg_id)
             email_messages.append(parse_email_message(msg))
-
-            # Mark email as unread so we don't filter out on next run
-            self.mail_handler.mark_as_unread(msg_id)
 
         return email_messages
 
@@ -230,8 +242,9 @@ class MailClient:
         topics_str = ", ".join(self.config.topics_of_interest)
         prompt = f"""
         Analyze this email and answer the following questions:
-        1. Is this from a recruiter or about a job opportunity, and is it the first email they have sent (False if this is a follow up or reply)?
+        1. Is this from a recruiter or about a job opportunity?
         2. Does it mention any of these topics in a meaningful way (be strict): {topics_str}
+        3. Is this a follow up email? (hint: look for 'Re:' in the subject)
 
         For each question, provide:
         - A boolean answer (true/false)
@@ -299,28 +312,6 @@ class MailClient:
         return response.choices[0].message.content.strip()
 
     @weave.op
-    async def process_recruiter_emails(self) -> None:
-        """
-        Main method to process recruiter emails:
-        1. Get unread messages
-        2. Analyze emails for recruiter content and configured topics
-        3. Generate and save response drafts for review
-        """
-        try:
-            self.connect()
-            unread_messages = self.get_unread_messages()
-
-            for msg in unread_messages:
-                analysis = await self.analyze_email(msg)
-                if analysis.is_recruiter and not analysis.mentions_topics:
-                    response = await self.generate_response(msg)
-                    await self.create_response_draft(msg, response)
-                    print(f"Created draft response for: {msg.subject}")
-
-        finally:
-            self.disconnect()
-
-    @weave.op
     def create_response_draft(
         self, email_msg: EmailMessage, response_body: str
     ) -> None:
@@ -378,7 +369,8 @@ def main_test():
     mail_handler.connect()
     mail_client = MailClient(mail_handler=mail_handler)
     unread_messages = mail_client.get_unread_messages()
-    mail_client.analyze_email(unread_messages[0])
+    analysis = mail_client.analyze_email(unread_messages[0])
+    print(analysis)
     response = mail_client.generate_response(unread_messages[0])
     mail_client.create_response_draft(unread_messages[0], response)
 
